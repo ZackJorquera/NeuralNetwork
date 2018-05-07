@@ -20,9 +20,9 @@ public:
 	double *weightAt(int layerTo, int to, int from) { return &(weights[layerTo - 1][to][from]); }
 	double *biasAt(int layer, int neuron) { return &(biases[layer - 1][neuron]); }
 	double *neuronAt(int layer, int neuron) { return &(neurons[layer][neuron]); }
-	double BackPropagate(std::vector<std::vector<double>> inputVectors, std::vector<std::vector<double>> targetVectors, bool, bool);
+	double BackPropagate(std::vector<std::vector<double>> inputVectors, std::vector<std::vector<double>> targetVectors, double learningRate);
 private:
-	std::vector<std::string> _activationFunctionTypes{ "RELU","TANH" };
+	std::vector<std::string> _activationFunctionTypes{ "PRELU", "TANH", "SOFTPLUS", "LINEAR"};
 	int _activationFunctionType = 0;
 	void ForwardPropagateOneLayer(int fromLayer);
 	double ActivationFunction(double, bool);

@@ -6,9 +6,16 @@
 
 #include <time.h>
 
+#include <intrin.h>
+
+#include "opencv2/core.hpp"
+#include "opencv2/imgcodecs.hpp"
+#include "opencv2/highgui.hpp"
+
 #include "NeuralNet.h"
 
 using namespace std;
+
 
 void CreateDefault();
 double dRand(double fMin, double fMax);
@@ -23,6 +30,10 @@ void ForwardPropagate(vector<string> args);
 void CalcCost(vector<string> args);
 void SaveToFile(string fileLocation);
 void BackPropagate(vector<string> args);
+
+vector<double> LoadImage(string filePath);
+void TrainHandWrittenNumsFromMNISTData(vector<string> input);
+uint32_t readuint32FromFile(ifstream stream);
 
 void trainAdding();
 
@@ -70,7 +81,9 @@ void loop()
 			PrintHelp();
 		else if (input[0] == "save")
 			SaveToFile(input[1]);
-		else if (input[0] == "t")
+		else if (input[0] == "trainnums")
+			TrainHandWrittenNumsFromMNISTData(input);//LoadImage(input[1]);//trainAdding();
+		else if (input[0] == "trainsum")
 			trainAdding();
 		else
 			cout << "Undefined command: \"" << input[0] << "\".  Try \"help\"."<< endl;
@@ -134,7 +147,7 @@ void CreateNewNeuralNet(vector<string> args)
 	if (actvFunc != "")
 	{
 		if (!theNeuralNet.TrySetActivationFunctionType(actvFunc))
-			cout << "Failed to set activation function type to \"" << actvFunc << "\", set to ReLU." << endl;//RelU is Default
+			cout << "Failed to set activation function type to \"" << actvFunc << "\", set to PReLU." << endl;//RelU is Default
 	}
 }
 
@@ -146,11 +159,36 @@ vector<string> NextInput()
 
 	vector<std::string> argArray;
 	size_t pos = 0, found;
-	while ((found = input.find_first_of(' ', pos)) != string::npos) {
-		argArray.push_back(input.substr(pos, found - pos));
-		pos = found + 1;
+	bool lookingForQuote = false;
+
+	for (int i = 0; i < input.size(); i++)
+	{
+		if (lookingForQuote)
+		{
+			if (input[i] == '\"')
+			{
+				argArray.push_back(input.substr(pos, i - pos));
+				lookingForQuote = false;
+				pos = i + 1;
+			}
+		}
+		else
+		{
+			if (input[i] == '\"')
+			{
+				lookingForQuote = true;
+				pos = i + 1;
+			}
+			if (input[i] == ' ')
+			{
+				if(i - pos > 1)
+					argArray.push_back(input.substr(pos, i - pos));
+				pos = i + 1;
+			}
+		}
 	}
-	argArray.push_back(input.substr(pos));
+	if (pos != input.size())
+		argArray.push_back(input.substr(pos));
 
 	return argArray;
 }
@@ -211,28 +249,45 @@ void ForwardPropagate(vector<string> args)
 		return;
 	}
 
-	if (args[1] != "-r" && args.size() - 1 != theNeuralNet.InputSize)
+	if ((args[1] != "-r" && args[1] != "-i") && args.size() - 1 != theNeuralNet.InputSize)
 	{
 		cout << "Incorrect amount of arguments. Expected " << theNeuralNet.InputSize << ", but got " << args.size() - 1 << "." << endl;
 		return;
 	}
 
 	vector<double> input;
-	for (int i = 0; i < theNeuralNet.InputSize; i++)
+	if (args[1] != "-i")
 	{
-		if(args[1] == "-r")
-			input.push_back(dRand(0, 1));
-		else
-			input.push_back(stod(args[i + 1]));
+		for (int i = 0; i < theNeuralNet.InputSize; i++)
+		{
+			if (args[1] == "-r")
+				input.push_back(dRand(0, 1));
+			else
+				input.push_back(stod(args[i + 1]));
+		}
+	}
+	else
+	{
+		input = LoadImage(args[2]);
+		if (input.size() != theNeuralNet.InputSize)
+		{
+			cout << "Incorrect image size. Expected " << theNeuralNet.InputSize << ", but got " << input.size() << "." << endl;
+			return;
+		}
 	}
 
 	vector<double> output = theNeuralNet.ForwardPropagateAndCap(input);
 
 	cout << "input:" << endl;
-	for (int i = 0; i < input.size(); i++)
+	if (args[1] != "-i")
 	{
-		cout << "\t" << input[i] << endl;
+		for (int i = 0; i < input.size(); i++)
+		{
+			cout << "\t" << input[i] << endl;
+		}
 	}
+	else
+		cout << "\tFrom image: " << args[2] << endl;
 
 	cout << "output:" << endl;
 	for (int i = 0; i < output.size(); i++)
@@ -314,9 +369,9 @@ void BackPropagate(vector<string> args)
 	vector<vector<double>> targetVectors;
 	targetVectors.push_back(targetVector);
 
-	double change = theNeuralNet.BackPropagate(inputVectors, targetVectors, true, false);
+	double cost = theNeuralNet.BackPropagate(inputVectors, targetVectors, 0.5);//TODO: get learningRate from user
 
-	cout << "Change in Cost:\n\t" << to_string(change) << endl;
+	cout << "Cost:\n\t" << cost << endl;
 }
 
 void trainAdding()
@@ -329,14 +384,170 @@ void trainAdding()
 		{
 			double sum = dRand(0, 1);
 			double a = dRand(-1, 1);
-			double b = sum - a;
+			double rem = sum - a;
+			double b = dRand(-1, 1);
+			rem = rem - b;
+			double c = dRand(-1, 1);
+			double d = rem - c;
+			
 			//double m = a * b;
-			inputVectors.push_back(vector<double>{a, b});
+			inputVectors.push_back(vector<double>{a, b, c, d});
 			targetVectors.push_back(vector<double>{sum});
 		}
 
-		double change = theNeuralNet.BackPropagate(inputVectors, targetVectors, true, true);
+		double cost = theNeuralNet.BackPropagate(inputVectors, targetVectors, 0.5);
 
-		cout << "Change in Cost:\n\t" << to_string(change) << endl;
+		cout << "Cost:\n\t" << cost << endl;
 	}
+}
+
+void TrainHandWrittenNumsFromMNISTData(vector<string> input)
+{
+	if (input.size() != 5)
+	{
+		cout << "Expected 4 parameters, use help for more information." << endl;
+		return;
+	}
+
+	if (theNeuralNet.OutputSize == 0)
+	{
+		cout << "The neural network has not been set up." << endl;
+	}
+
+	ifstream dataFile;
+	dataFile.open(input[1], ios::out | ios::binary);
+	ifstream labelFile;
+	labelFile.open(input[2], ios::out | ios::binary);
+	int trainingSize = stoi(input[3]);
+	double learningRate = stod(input[4]);
+
+	uint32_t dataMagicNum = 2051;
+	uint32_t labelMagicNum = 2049;
+
+	int numOfImages;
+	int numOfLabels;
+	int rows;
+	int cols;
+
+	uint32_t a;
+	while (dataFile.read(reinterpret_cast<char *>(&a), sizeof(a)))
+	{
+		a = _byteswap_ulong(a);
+		if (a == dataMagicNum)
+		{
+			dataFile.read(reinterpret_cast<char *>(&a), sizeof(a));
+			numOfImages = _byteswap_ulong(a);
+
+			dataFile.read(reinterpret_cast<char *>(&a), sizeof(a));
+			rows = _byteswap_ulong(a);
+
+			dataFile.read(reinterpret_cast<char *>(&a), sizeof(a));
+			cols = _byteswap_ulong(a);
+			break;
+		}
+	}
+
+	while (labelFile.read(reinterpret_cast<char *>(&a), sizeof(a)))
+	{
+		a = _byteswap_ulong(a);
+		if (a == labelMagicNum)
+		{
+			labelFile.read(reinterpret_cast<char *>(&a), sizeof(a));
+			numOfLabels = _byteswap_ulong(a);
+			break;
+		}
+	}
+
+	if (numOfImages != numOfLabels)
+	{
+		cout << "The training data files do not align." << endl;
+		return;
+	}
+	else
+		cout << "Reading in " << numOfImages << " total images to train with." << endl;
+
+	vector<vector<double>> images;
+	vector<vector<double>> labels;
+
+	uchar b;
+
+	//cv::Mat matimage = cv::Mat::zeros(cv::Size(cols, rows), CV_8U);
+
+	for (int i = 0; i < numOfImages; i++)
+	{
+		vector<double> image;
+		vector<double> label;
+		for (int x = 0; x < cols; x++)
+		{
+			for (int y = 0; y < rows; y++)
+			{
+				dataFile.read(reinterpret_cast<char *>(&b), sizeof(b));
+				image.push_back(double(b)/255);
+
+				//matimage.at<uchar>(x, y) = b;
+			}
+		}
+		//cv::imshow("test", matimage);
+		//cvWaitKey(0);
+		labelFile.read(reinterpret_cast<char *>(&b), sizeof(b));
+		for (int j = 0; j < int(b); j++)
+			label.push_back(0);
+		label.push_back(1);
+		for (int j = label.size(); j < 10; j++)
+			label.push_back(0);
+
+		images.push_back(image);
+		labels.push_back(label);
+	}
+
+	cout << "Starting to train, press 'q' to stop." << endl;//TODO: add the q part
+	for (int i = 0; i < numOfImages; i++)
+	{
+		vector<vector<double>> inputImages;
+		vector<vector<double>> inputLabels;
+		for (int j = 0; j < trainingSize; j++)
+		{
+			int index = j + i;
+			if (index > numOfImages)
+				index -= numOfImages;
+			inputImages.push_back(images[index]);
+			inputLabels.push_back(labels[index]);
+		}
+		double cost = theNeuralNet.BackPropagate(inputImages, inputLabels, learningRate);
+		cout << "Iteration " << i << ":\nCost:\t" << cost << endl;
+	}
+
+}
+
+uint32_t readuint32FromFile(ifstream stream)
+{
+	uint32_t a;
+	stream.read(reinterpret_cast<char *>(&a), sizeof(a));
+	return(_byteswap_ulong(a));
+}
+
+vector<double> LoadImage(string filePath)
+{
+	cv::Mat image = cv::imread(filePath, cv::IMREAD_GRAYSCALE);
+	vector<double> imageVector;
+
+	for (int x = 0; x < image.cols; x++)
+		for (int y = 0; y < image.rows; y++)
+			imageVector.push_back(double(image.at<uchar>(x, y))/255);
+	/*
+	cv::Mat matimage = cv::Mat::zeros(cv::Size(28, 28), CV_8U);
+	int i = 0;
+	for (int x = 0; x < 28; x++)
+	{
+		for (int y = 0; y < 28; y++)
+		{
+			uchar b = imageVector[i] * 255;
+			i++;
+			matimage.at<uchar>(x, y) = b;
+		}
+	}
+	cv::imshow("test", matimage);
+	cvWaitKey(0);
+	//*/
+	return imageVector;
 }

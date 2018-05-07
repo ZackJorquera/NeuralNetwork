@@ -1,13 +1,31 @@
 #include "NeuralNet.h"
 #include <math.h>
+#include <iomanip>
+#include <sstream>
+
+#define e 2.71828182845904523536028747135266249775724709369995   //Might be to much
+#define loge 0.43429448190325182765112891891660508229439700580366
+#define ln(v) log(v)/loge
+
+namespace hp
+{
+	std::string to_string(double d)
+	{
+		std::ostringstream stm;
+		stm << std::setprecision(std::numeric_limits<double>::max_digits10) << d;
+		return stm.str();
+	}
+}
 
 using namespace std;
+
 
 double pdRand(double fMin, double fMax);
 string grabChunk(string, int *startVal);
 vector<double> GetCSDoubles(string csvs);
 
-vector<int> GetDimensions(string dimsInfo);
+vector<int> GetDimensions(string generalInfo);
+string GetActivationFunctionType(string generalInfo);
 vector<vector<vector<double>>> GetWeights(string weightsInfo);
 vector<vector<double>> GetBiases(string biasesInfo);
 string ToUpper(string);
@@ -50,7 +68,8 @@ NeuralNet::NeuralNet(vector<int> dimensions)
 
 NeuralNet::NeuralNet(string zsonData, string *retString)
 {//TODO: use a try catch also make is use less memory to open because it uses about 8 times the size of the file and takes like 10000000 years
-	string dimsInfo = "";
+	string generalInfo = "";
+	string activationFunctionType = "";
 	string weightsInfo = "";
 	string biasesInfo = "";
 
@@ -60,14 +79,14 @@ NeuralNet::NeuralNet(string zsonData, string *retString)
 		{
 			string chunk = grabChunk(zsonData, &i);
 			if (chunk[1] == 'd' && chunk[2] == 'i')
-				dimsInfo = chunk;
+				generalInfo = chunk;
 			else if (chunk[1] == 'w' && chunk[2] == 'e')
 				weightsInfo = chunk;
 			else if (chunk[1] == 'b' && chunk[2] == 'i')
 				biasesInfo = chunk;
 		}
 	}
-	if (dimsInfo == "" || weightsInfo == "" || biasesInfo == "")
+	if (generalInfo == "" || weightsInfo == "" || biasesInfo == "")
 	{
 		*retString = "Bad save file.";
 		neurons = vector<vector<double>>();
@@ -80,7 +99,9 @@ NeuralNet::NeuralNet(string zsonData, string *retString)
 		weights = vector<vector<vector<double>>>();
 		biases = vector<vector<double>>();
 
-		vector<int> dimensions = GetDimensions(dimsInfo);
+		vector<int> dimensions = GetDimensions(generalInfo);
+		activationFunctionType = GetActivationFunctionType(generalInfo);
+		TrySetActivationFunctionType(activationFunctionType);
 
 		InputSize = dimensions[0];
 		OutputSize = dimensions[dimensions.size() - 1];
@@ -105,20 +126,36 @@ NeuralNet::NeuralNet(string zsonData, string *retString)
 	}
 }
 
-vector<int> GetDimensions(string dimsInfo)
+vector<int> GetDimensions(string generalInfo)
 {
 	vector<int> dims;
-	for (int i = 0; i < dimsInfo.length(); i++)
+	for (int i = 0; i < generalInfo.length(); i++)
 	{
-		if (dimsInfo[i] == '[')
+		if (generalInfo[i] == '[')
 		{
-			vector<double> doubleDims = GetCSDoubles(grabChunk(dimsInfo, &i));
+			vector<double> doubleDims = GetCSDoubles(grabChunk(generalInfo, &i));
 			for (int i = 0; i < doubleDims.size(); i++)
 				dims.push_back(int(doubleDims[i]));
 			break;
 		}
 	}
 	return dims;
+}
+
+string GetActivationFunctionType(string generalInfo)
+{
+	string actFunc = "";
+	for (int i = 0; i < generalInfo.length(); i++)
+	{
+		if (generalInfo[i] == ':' && generalInfo[i - 4] == 'f' && generalInfo[i - 7] == 'a')
+		{
+			for (int j = 1; generalInfo[i + j] != '}' && generalInfo[i + j] != ','; j++)
+			{
+				actFunc += generalInfo[i + j];
+			}
+			return actFunc;
+		}
+	}
 }
 
 vector<vector<vector<double>>> GetWeights(string weightsInfo)
@@ -236,7 +273,7 @@ vector<double> NeuralNet::ForwardPropagate(vector<double> inputVector)
 	}
 	else
 		throw "Bad arguments.";
-	return vector<double>();//TODO: Add error case
+	return vector<double>();
 }
 
 vector<double> NeuralNet::ForwardPropagateAndCap(vector<double> inputVector)
@@ -269,18 +306,17 @@ void NeuralNet::ForwardPropagateOneLayer(int layer)
 
 double NeuralNet::ActivationFunction(double v, bool derivative)
 {
-	if (_activationFunctionTypes[_activationFunctionType] == "RELU")
+	if (_activationFunctionTypes[_activationFunctionType] == "PRELU")
 	{
-		double s = 0.001;
+		double a = 0.001;
 		if (derivative)
 			if (v <= 0)
-				v = s;
+				v = a;
 			else
 				v = 1;
 		else
-			//ReLu
 			if (v <= 0)
-				v = v * s;
+				v = v * a;
 			else
 				v = v;
 	}
@@ -291,8 +327,21 @@ double NeuralNet::ActivationFunction(double v, bool derivative)
 		else
 			v = tanh(v);
 	}
+	else if (_activationFunctionTypes[_activationFunctionType] == "SOFTPLUS")
+	{
+		if (derivative)
+			v = 1 / (1 + pow(e, v));
+		else
+			v = ln(1 + pow(e, v));//log(1 + pow(e, v)) / loge;
+	}
+	else if (_activationFunctionTypes[_activationFunctionType] == "LINEAR")
+	{
+		if (derivative)
+			v = 1;
+		else
+			v = v;
+	}
 	return v;
-	//TODO: add more Activation Functions
 }
 
 bool NeuralNet::TrySetActivationFunctionType(string typeString)
@@ -323,8 +372,7 @@ double NeuralNet::CalculateCostFromOutput(std::vector<double> targetVector)
 		cost /= targetVector.size();
 		return cost;
 	}
-
-	//TODO: do something
+	throw "Bad arguments.";
 	return 1;
 }
 
@@ -339,9 +387,10 @@ string NeuralNet::ExportNetworkToZSON()
 		if (layer != neurons.size() - 1)
 			output += ",";
 	}
-	output += "]\n}\n";
+	output += "],\n";
+	output += "actfunc:" + _activationFunctionTypes[_activationFunctionType] + "\n}\n";
 
-	output += "{\nweights:";
+	output += "{\nweights:";//TODO: add [] around the weights values
 	for (int layer = 0; layer < weights.size(); layer++)
 	{
 		output += "\n  [";
@@ -350,7 +399,7 @@ string NeuralNet::ExportNetworkToZSON()
 			output += "\n    [";
 			for (int from = 0; from < weights[layer][to].size(); from++)
 			{
-				output += to_string(weights[layer][to][from]);
+				output += hp::to_string(weights[layer][to][from]);
 				if (from != weights[layer][to].size() - 1)
 					output += ",";
 			}
@@ -370,7 +419,7 @@ string NeuralNet::ExportNetworkToZSON()
 		output += "\n  [";
 		for (int neuron = 0; neuron < biases[layer].size(); neuron++)
 		{
-			output += to_string(biases[layer][neuron]);
+			output += hp::to_string(biases[layer][neuron]);
 			if (neuron != biases[layer].size() - 1)
 				output += ",";
 		}
@@ -383,31 +432,20 @@ string NeuralNet::ExportNetworkToZSON()
 	return output;
 }
 
-double  NeuralNet::BackPropagate(std::vector<std::vector<double>> inputVectors, std::vector<std::vector<double>> targetVectors, bool findChangeInCost, bool revertPositiveChanges)
+double NeuralNet::BackPropagate(std::vector<std::vector<double>> inputVectors, std::vector<std::vector<double>> targetVectors, double learningRate)
 {
 	vector<vector<vector<double>>> shiftWeights;
 	vector<vector<double>> shiftBiases;
-	double changeInCost = 0;
 
 	if (inputVectors.size() != targetVectors.size() && inputVectors.size() != 0)
 		throw "Arguments sizes do not equal.";
 
-	if (inputVectors.size() == 0)
-		ForwardPropagate(neurons[0]);
-	else
-		ForwardPropagate(inputVectors[0]);
-	if (findChangeInCost)
-		changeInCost = CalculateCostFromOutput(targetVectors[0]);
-
 	for (int i = 0; i < targetVectors.size(); i++)
 	{
-		if (i != 0)
-		{
-			if (inputVectors.size() == 0)
-				ForwardPropagate(neurons[0]);
-			else
-				ForwardPropagate(inputVectors[i]);
-		}
+		if (inputVectors.size() == 0)
+			ForwardPropagate(neurons[0]);
+		else
+			ForwardPropagate(inputVectors[i]);
 
 		vector<double> inputdC_das;
 		for(int j = 0; j < neurons[neurons.size() - 1].size(); j++)
@@ -441,41 +479,22 @@ double  NeuralNet::BackPropagate(std::vector<std::vector<double>> inputVectors, 
 		{
 			for (int k = 0; k < weights[l][j].size(); k++)
 			{
-				weights[l][j][k] -= shiftWeights[l][j][k];
+				weights[l][j][k] -= shiftWeights[l][j][k] * learningRate;
 			}
 			biases[l][j] -= shiftBiases[l][j];
 		}
 	}
 
-	if (findChangeInCost)
-	{
-		if (inputVectors.size() == 0)
-			ForwardPropagate(neurons[0]);
-		else
-			ForwardPropagate(inputVectors[0]);
-		double c = CalculateCostFromOutput(targetVectors[0]);
-		changeInCost = c - changeInCost;
+	if (inputVectors.size() == 0)
+		ForwardPropagate(neurons[0]);
+	else
+		ForwardPropagate(inputVectors[0]);
 
-		if (revertPositiveChanges && changeInCost > 0)
-		{
-			for (int l = 0; l < weights.size(); l++)
-			{
-				for (int j = 0; j < weights[l].size(); j++)
-				{
-					for (int k = 0; k < weights[l][j].size(); k++)
-					{
-						weights[l][j][k] += shiftWeights[l][j][k];
-					}
-					biases[l][j] += shiftBiases[l][j];
-				}
-			}
-			changeInCost = 0;
-		}
-	}
-	return changeInCost;
+	double cost = CalculateCostFromOutput(targetVectors[0]);
+	return cost;
 }
 
-pair<vector<vector<double>>, vector<vector<vector<double>>>> NeuralNet::BackPropagateAllLayers(vector<double> inputdC_das, int layerbpTo)//TODO: will it work
+pair<vector<vector<double>>, vector<vector<vector<double>>>> NeuralNet::BackPropagateAllLayers(vector<double> inputdC_das, int layerbpTo)
 {
 	if (layerbpTo == 0)
 		return pair<vector<vector<double>>, vector<vector<vector<double>>>>();
@@ -496,40 +515,31 @@ pair<vector<vector<double>>, vector<vector<vector<double>>>> NeuralNet::BackProp
 		}
 
 		double da_dz = ActivationFunction(zval, true);
-		if (layerbpTo > 0)
+		
+		for (int k = 0; k < neurons[layerbpTo - 1].size(); k++)
 		{
-			for (int k = 0; k < neurons[layerbpTo - 1].size(); k++)
-			{
-				double thisdC_da = weights[layerbpTo - 1][j][k] * da_dz * inputdC_das[j];
-				if (j == 0)//if first time
-					outputdC_das.push_back(thisdC_da);
-				else
-					outputdC_das[k] += thisdC_da;
+			double thisdC_da = weights[layerbpTo - 1][j][k] * da_dz * inputdC_das[j];
+			if (j == 0)//if first time
+				outputdC_das.push_back(thisdC_da);
+			else
+				outputdC_das[k] += thisdC_da;
 
-				double thisdz_dw = neurons[layerbpTo - 1][k];//weights[layerbpTo - 1][j][k];
-				double thisdC_dw = thisdz_dw * da_dz * inputdC_das[j];
-				dC_dbsForInputNeuron.push_back(thisdC_dw);
-			}
+			double thisdz_dw = neurons[layerbpTo - 1][k];//weights[layerbpTo - 1][j][k];
+			double thisdC_dw = thisdz_dw * da_dz * inputdC_das[j];
+			dC_dbsForInputNeuron.push_back(thisdC_dw);
 		}
-		if (layerbpTo > 0)
-		{
-			double dz_db = biases[layerbpTo - 1][j];
-			double dC_db = dz_db * da_dz * inputdC_das[j];
+		
+		double dz_db = 0.0001;//biases[layerbpTo - 1][j];
+		double dC_db = dz_db * da_dz * inputdC_das[j];
 
-			dC_dbsForThisLayer.push_back(dC_db);
-			dC_dwsForThisLayer.push_back(dC_dbsForInputNeuron);
-		}
+		dC_dbsForThisLayer.push_back(dC_db);
+		dC_dwsForThisLayer.push_back(dC_dbsForInputNeuron);
 	}
 	
 	pair<vector<vector<double>>, vector<vector<vector<double>>>> retValue = BackPropagateAllLayers(outputdC_das, layerbpTo - 1);
-	if (layerbpTo > 0)//TODO: remove dont need this if
-	{
-		//retValue.first.insert(retValue.first.begin(), dC_dbsForThisLayer);
-		//retValue.second.insert(retValue.second.begin(), dC_dwsForThisLayer);
-
-		retValue.first.push_back(dC_dbsForThisLayer);
-		retValue.second.push_back(dC_dwsForThisLayer);
-	}
+	
+	retValue.first.push_back(dC_dbsForThisLayer);
+	retValue.second.push_back(dC_dwsForThisLayer);
 
 	return retValue;
 }
