@@ -48,7 +48,7 @@ int main(int argNums, char** argv)
 	if (argNums > 1)
 		LoadNeuralNet(argv[1]);
 
-	srand(time(NULL));
+	srand(uint(time(NULL)));
 
 	loop();
 
@@ -158,7 +158,7 @@ vector<string> NextInput()
 	getline(cin, input);
 
 	vector<std::string> argArray;
-	size_t pos = 0, found;
+	size_t pos = 0;
 	bool lookingForQuote = false;
 
 	for (int i = 0; i < input.size(); i++)
@@ -181,7 +181,7 @@ vector<string> NextInput()
 			}
 			if (input[i] == ' ')
 			{
-				if(i - pos > 1)
+				if(i - pos >= 1)
 					argArray.push_back(input.substr(pos, i - pos));
 				pos = i + 1;
 			}
@@ -276,7 +276,7 @@ void ForwardPropagate(vector<string> args)
 		}
 	}
 
-	vector<double> output = theNeuralNet.ForwardPropagateAndCap(input);
+	vector<double> output = theNeuralNet.ForwardPropagate(input);//AndCap(input);
 
 	cout << "input:" << endl;
 	if (args[1] != "-i")
@@ -289,10 +289,18 @@ void ForwardPropagate(vector<string> args)
 	else
 		cout << "\tFrom image: " << args[2] << endl;
 
+	int biggest = 0;
+	for (int i = 1; i < output.size(); i++)
+	{
+		if (output[i] > output[biggest])
+			biggest = i;
+	}
 	cout << "output:" << endl;
 	for (int i = 0; i < output.size(); i++)
 	{
-		cout << "\t" << output[i] << endl;
+		if (biggest == i)
+			cout << "*";
+		cout << i << ":" << "\t" << output[i] << endl;
 	}
 }
 
@@ -310,7 +318,7 @@ void CalcCost(vector<string> args)
 		target.push_back(stod(args[i + 1]));
 	}
 
-	cout << "cost :" << endl;
+	cout << "cost:" << endl;
 	cout << "\t" << theNeuralNet.CalculateCostFromOutput(target) << endl;
 }
 
@@ -326,19 +334,42 @@ void PrintHelp()
 
 	cout << "fp [Params IntputVector/Options] - Does forward propagation with input vector." << endl;
 	cout << "                          -r     - Uses a random input vector." << endl << endl;
-	cout << "bp [Params TargetVector] - Performs a backpropagates using the previous forward propagation. Always use \"fp\" before to be safe." << endl << endl;
+	cout << "bp [Options] [Params TargetVector] - Performs a backpropagates using the previous forward propagation. Always use \"fp\" before to be safe." << endl;
+	cout << "       -l                          - Set the learning rate, default is 0.5." << endl << endl;
 	cout << "cost [Params TargetVector] - Finds the cost with a given target vector. Should be used after a forward propagation" << endl << endl;
 	cout << "load [File]  - Loads a Neural Network from a save file." << endl;
 	cout << "     default - Loads the default test Neural Network." << endl << endl;
 	cout << "save [File]  - Saves the current Neural Network to a save file." << endl << endl;
 	cout << "create [-a [type]] [Params Dimensions] - Creates a new randomly filled Neural Network with the given dimensions." << endl << endl;
+	cout << "trainnums [Options] [Image File] [Label File] [Training Size] [Learning Rate] - Trains the network to detect handwritten numbers in 28 by 28 images using the MNIST database. Requires input vector size to be 784 and output size to be 10." << endl;
+	cout << "             -p [Modular]                                                     - Print the cost as the network is being trained every time the iteration mod the modular is equal to zero." << endl;
+	cout << "             -o [Offset]                                                      - Starts training at the offset." << endl;
+	cout << "             -s [Step Size]                                                   - The step size when training the network." << endl << endl;
 
-	//TODO: add help
 }
 
 void BackPropagate(vector<string> args)
 {
-	if (args.size() <= 1)
+	double learningRate = 0.5;
+	bool useRand = false;
+	int argEndAt = 1;
+
+	for (int iter = 1; iter < args.size(); iter++)
+	{
+		argEndAt = iter;
+		if (args[iter] == "-l")
+		{
+			learningRate = stod(args[iter + 1]);
+			iter++;
+			argEndAt = iter;
+		}
+		else if (args[iter] == "-r")
+			useRand = true;
+		else
+			break;
+	}
+
+	if (args.size() <= argEndAt && !useRand)
 	{
 		cout << "No args where given." << endl;
 		return;
@@ -350,26 +381,26 @@ void BackPropagate(vector<string> args)
 		return;
 	}
 
-	if (args[1] != "-r" && args.size() - 1 != theNeuralNet.OutputSize)
+	if (!useRand && args.size() - argEndAt != theNeuralNet.OutputSize)
 	{
-		cout << "Incorrect amount of arguments. Expected " << theNeuralNet.OutputSize << ", but got " << args.size() - 1 << "." << endl;
+		cout << "Incorrect amount of target vector arguments. Expected " << theNeuralNet.OutputSize << ", but got " << args.size() - 1 << "." << endl;
 		return;
 	}
 
 	vector<double> targetVector;
 	for (int i = 0; i < theNeuralNet.OutputSize; i++)
 	{
-		if (args[1] == "-r")
+		if (useRand)
 			targetVector.push_back(dRand(0, 1));
 		else
-			targetVector.push_back(stod(args[i + 1]));
+			targetVector.push_back(stod(args[i + argEndAt]));
 	}
 
 	vector<vector<double>> inputVectors;
 	vector<vector<double>> targetVectors;
 	targetVectors.push_back(targetVector);
 
-	double cost = theNeuralNet.BackPropagate(inputVectors, targetVectors, 0.5);//TODO: get learningRate from user
+	double cost = theNeuralNet.BackPropagate(inputVectors, targetVectors, learningRate);
 
 	cout << "Cost:\n\t" << cost << endl;
 }
@@ -403,9 +434,44 @@ void trainAdding()
 
 void TrainHandWrittenNumsFromMNISTData(vector<string> input)
 {
-	if (input.size() != 5)
+	int startAt = 0;
+	string dataFileString;
+	string labelFileString;
+	int trainingSize;
+	int stepSize = 1;
+	int printModular = 0;
+	double learningRate;
+
+	for (int iter = 1; iter < input.size(); iter++)
 	{
-		cout << "Expected 4 parameters, use help for more information." << endl;
+		if (input[iter] == "-p")
+		{
+			printModular = stoi(input[iter + 1]);
+			iter++;
+		}
+		else if (input[iter] == "-o")
+		{
+			startAt = stoi(input[iter + 1]);
+			iter++;
+		}
+		else if (input[iter] == "-s")
+		{
+			stepSize = stoi(input[iter + 1]);
+			iter++;
+		}
+		else
+		{
+			dataFileString = input[iter];
+			labelFileString = input[iter + 1];
+			trainingSize = stoi(input[iter + 2]);
+			learningRate = stod(input[iter + 3]);
+			break;
+		}
+	}
+
+	if (input.size() < 5)
+	{
+		cout << "Expected at least 4 parameters, use help for more information." << endl;
 		return;
 	}
 
@@ -415,11 +481,9 @@ void TrainHandWrittenNumsFromMNISTData(vector<string> input)
 	}
 
 	ifstream dataFile;
-	dataFile.open(input[1], ios::out | ios::binary);
+	dataFile.open(dataFileString, ios::out | ios::binary);
 	ifstream labelFile;
-	labelFile.open(input[2], ios::out | ios::binary);
-	int trainingSize = stoi(input[3]);
-	double learningRate = stod(input[4]);
+	labelFile.open(labelFileString, ios::out | ios::binary);
 
 	uint32_t dataMagicNum = 2051;
 	uint32_t labelMagicNum = 2049;
@@ -493,7 +557,7 @@ void TrainHandWrittenNumsFromMNISTData(vector<string> input)
 		for (int j = 0; j < int(b); j++)
 			label.push_back(0);
 		label.push_back(1);
-		for (int j = label.size(); j < 10; j++)
+		for (size_t j = label.size(); j < 10; j++)
 			label.push_back(0);
 
 		images.push_back(image);
@@ -501,7 +565,8 @@ void TrainHandWrittenNumsFromMNISTData(vector<string> input)
 	}
 
 	cout << "Starting to train, press 'q' to stop." << endl;//TODO: add the q part
-	for (int i = 0; i < numOfImages; i++)
+	int iteration = 0;
+	for (int i = startAt; i < numOfImages; i += stepSize)
 	{
 		vector<vector<double>> inputImages;
 		vector<vector<double>> inputLabels;
@@ -514,7 +579,9 @@ void TrainHandWrittenNumsFromMNISTData(vector<string> input)
 			inputLabels.push_back(labels[index]);
 		}
 		double cost = theNeuralNet.BackPropagate(inputImages, inputLabels, learningRate);
-		cout << "Iteration " << i << ":\nCost:\t" << cost << endl;
+		if(printModular != 0 && iteration % printModular == 0)
+			cout << "Cost:\t" << cost << endl;
+		iteration++;
 	}
 
 }

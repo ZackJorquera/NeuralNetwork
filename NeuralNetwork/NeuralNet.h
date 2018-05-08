@@ -14,6 +14,7 @@ public:
 	bool TrySetActivationFunctionType(std::string);
 	NeuralNet(std::vector<int> dimensions);
 	NeuralNet(std::string zsonData, std::string *retString);
+	std::vector<double> ForwardPropagate(std::vector<double> inputVector);
 	std::vector<double> ForwardPropagateAndCap(std::vector<double> inputVector);
 	double CalculateCostFromOutput(std::vector<double> targetVector);
 	std::string ExportNetworkToZSON();
@@ -22,10 +23,10 @@ public:
 	double *neuronAt(int layer, int neuron) { return &(neurons[layer][neuron]); }
 	double BackPropagate(std::vector<std::vector<double>> inputVectors, std::vector<std::vector<double>> targetVectors, double learningRate);
 private:
+	double learningrate;
 	std::vector<std::string> _activationFunctionTypes{ "PRELU", "TANH", "SOFTPLUS", "LINEAR"};
 	int _activationFunctionType = 0;
 	void ForwardPropagateOneLayer(int fromLayer);
 	double ActivationFunction(double, bool);
-	std::vector<double> ForwardPropagate(std::vector<double> inputVector);
 	std::pair<std::vector<std::vector<double>>, std::vector<std::vector<std::vector<double>>>> BackPropagateAllLayers(std::vector<double> dC_dz, int layer);
 };

@@ -436,6 +436,7 @@ double NeuralNet::BackPropagate(std::vector<std::vector<double>> inputVectors, s
 {
 	vector<vector<vector<double>>> shiftWeights;
 	vector<vector<double>> shiftBiases;
+	learningrate = learningRate;
 
 	if (inputVectors.size() != targetVectors.size() && inputVectors.size() != 0)
 		throw "Arguments sizes do not equal.";
@@ -479,7 +480,7 @@ double NeuralNet::BackPropagate(std::vector<std::vector<double>> inputVectors, s
 		{
 			for (int k = 0; k < weights[l][j].size(); k++)
 			{
-				weights[l][j][k] -= shiftWeights[l][j][k] * learningRate;
+				weights[l][j][k] -= shiftWeights[l][j][k] * learningrate;
 			}
 			biases[l][j] -= shiftBiases[l][j];
 		}
@@ -524,12 +525,12 @@ pair<vector<vector<double>>, vector<vector<vector<double>>>> NeuralNet::BackProp
 			else
 				outputdC_das[k] += thisdC_da;
 
-			double thisdz_dw = neurons[layerbpTo - 1][k];//weights[layerbpTo - 1][j][k];
+			double thisdz_dw = neurons[layerbpTo - 1][k];
 			double thisdC_dw = thisdz_dw * da_dz * inputdC_das[j];
 			dC_dbsForInputNeuron.push_back(thisdC_dw);
 		}
 		
-		double dz_db = 0.0001;//biases[layerbpTo - 1][j];
+		double dz_db = 1;
 		double dC_db = dz_db * da_dz * inputdC_das[j];
 
 		dC_dbsForThisLayer.push_back(dC_db);
