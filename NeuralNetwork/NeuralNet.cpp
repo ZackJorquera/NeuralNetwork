@@ -330,7 +330,7 @@ double NeuralNet::ActivationFunction(double v, bool derivative)
 	else if (_activationFunctionTypes[_activationFunctionType] == "SOFTPLUS")
 	{
 		if (derivative)
-			v = 1 / (1 + pow(e, v));
+			v = 1 / (1 + pow(e, -v));
 		else
 			v = ln(1 + pow(e, v));//log(1 + pow(e, v)) / loge;
 	}
@@ -340,6 +340,13 @@ double NeuralNet::ActivationFunction(double v, bool derivative)
 			v = 1;
 		else
 			v = v;
+	}
+	else if (_activationFunctionTypes[_activationFunctionType] == "SIGMOID")
+	{
+		if (derivative)
+			v = ActivationFunction(v, false)*(1 - ActivationFunction(v, false));
+		else
+			v = 1 / (1 + pow(e, -v));
 	}
 	return v;
 }
@@ -432,7 +439,7 @@ string NeuralNet::ExportNetworkToZSON()
 	return output;
 }
 
-double NeuralNet::BackPropagate(std::vector<std::vector<double>> inputVectors, std::vector<std::vector<double>> targetVectors, double learningRate)
+double NeuralNet::BackPropagate(std::vector<std::vector<double>> inputVectors, std::vector<std::vector<double>> targetVectors, double learningRate)//TODO: fix the learningRate issue
 {
 	vector<vector<vector<double>>> shiftWeights;
 	vector<vector<double>> shiftBiases;

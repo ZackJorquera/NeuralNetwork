@@ -11,6 +11,7 @@
 #include "opencv2/core.hpp"
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/highgui.hpp"
+#include "opencv2/imgproc.hpp"
 
 #include "NeuralNet.h"
 
@@ -31,13 +32,16 @@ void CalcCost(vector<string> args);
 void SaveToFile(string fileLocation);
 void BackPropagate(vector<string> args);
 
-vector<double> LoadImage(string filePath);
+vector<double> LoadImage(string filePath, double blur);
 void TrainHandWrittenNumsFromMNISTData(vector<string> input);
-uint32_t readuint32FromFile(ifstream stream);
+void TestHandWrittenNumsFromMNISTData(vector<string> input);
+//uint32_t readuint32FromFile(ifstream stream);
 
 void trainAdding();
 
 NeuralNet theNeuralNet({0});
+
+static bool HasSentCancellationRequest = false;//TODO: add the q part so that it changes this
 
 int main(int argNums, char** argv)
 {
@@ -64,31 +68,40 @@ void loop()
 		vector<string> input = NextInput();
 		if (input[0] == "")
 			input = lastInput;
-
-		if (input[0] == "quit")
-			return;
-		else if (input[0] == "fp")
-			ForwardPropagate(input);
-		else if (input[0] == "bp")
-			BackPropagate(input);
-		else if (input[0] == "cost")
-			CalcCost(input);
-		else if (input[0] == "load")
-			LoadNeuralNet(input[1]);
-		else if (input[0] == "create")
-			CreateNewNeuralNet(input);
-		else if (input[0] == "help")
-			PrintHelp();
-		else if (input[0] == "save")
-			SaveToFile(input[1]);
-		else if (input[0] == "trainnums")
-			TrainHandWrittenNumsFromMNISTData(input);//LoadImage(input[1]);//trainAdding();
-		else if (input[0] == "trainsum")
-			trainAdding();
-		else
-			cout << "Undefined command: \"" << input[0] << "\".  Try \"help\"."<< endl;
+		try
+		{
+			if (input[0] == "quit")
+				return;
+			else if (input[0] == "fp")
+				ForwardPropagate(input);
+			else if (input[0] == "bp")
+				BackPropagate(input);
+			else if (input[0] == "cost")
+				CalcCost(input);
+			else if (input[0] == "load")
+				LoadNeuralNet(input[1]);
+			else if (input[0] == "create")
+				CreateNewNeuralNet(input);
+			else if (input[0] == "help")
+				PrintHelp();
+			else if (input[0] == "save")
+				SaveToFile(input[1]);
+			else if (input[0] == "trainnums")
+				TrainHandWrittenNumsFromMNISTData(input);
+			else if (input[0] == "testnums")
+				TestHandWrittenNumsFromMNISTData(input);
+			else if (input[0] == "trainsum")
+				trainAdding();
+			else
+				cout << "Undefined command: \"" << input[0] << "\".  Try \"help\"." << endl;
+		}
+		catch (...)
+		{
+			cout << "An unknown failure occurred." << endl;
+		}
 
 		lastInput = input;
+		HasSentCancellationRequest = false;
 	}
 }
 
@@ -268,10 +281,18 @@ void ForwardPropagate(vector<string> args)
 	}
 	else
 	{
-		input = LoadImage(args[2]);
-		if (input.size() != theNeuralNet.InputSize)
+		try
 		{
-			cout << "Incorrect image size. Expected " << theNeuralNet.InputSize << ", but got " << input.size() << "." << endl;
+			input = LoadImage(args[2], 10.0);
+			if (input.size() != theNeuralNet.InputSize)
+			{
+				cout << "Incorrect image size. Expected " << theNeuralNet.InputSize << ", but got " << input.size() << "." << endl;
+				return;
+			}
+		}
+		catch (...)
+		{
+			cout << "Failed to load image." << endl;
 			return;
 		}
 	}
@@ -306,6 +327,12 @@ void ForwardPropagate(vector<string> args)
 
 void CalcCost(vector<string> args)
 {
+	if (theNeuralNet.InputSize == 0)
+	{
+		cout << "The neural network has not been set up." << endl;
+		return;
+	}
+
 	if (args.size() - 1 != theNeuralNet.OutputSize)
 	{
 		cout << "Incorrect amount of arguments. Expected " << theNeuralNet.OutputSize << ", but got " << args.size() - 1 << "." << endl;
@@ -345,6 +372,8 @@ void PrintHelp()
 	cout << "             -p [Modular]                                                     - Print the cost as the network is being trained every time the iteration mod the modular is equal to zero." << endl;
 	cout << "             -o [Offset]                                                      - Starts training at the offset." << endl;
 	cout << "             -s [Step Size]                                                   - The step size when training the network." << endl << endl;
+	cout << "testnums [Options] [Image File] [Label File] - Calculates the test error rate of the network." << endl;
+	cout << "             -m                              - The maximum amount of images to test from the image file." << endl << endl;
 
 }
 
@@ -442,6 +471,12 @@ void TrainHandWrittenNumsFromMNISTData(vector<string> input)
 	int printModular = 0;
 	double learningRate;
 
+	if (input.size() < 5)
+	{
+		cout << "Expected at least 4 parameters, use help for more information." << endl;
+		return;
+	}
+
 	for (int iter = 1; iter < input.size(); iter++)
 	{
 		if (input[iter] == "-p")
@@ -467,12 +502,6 @@ void TrainHandWrittenNumsFromMNISTData(vector<string> input)
 			learningRate = stod(input[iter + 3]);
 			break;
 		}
-	}
-
-	if (input.size() < 5)
-	{
-		cout << "Expected at least 4 parameters, use help for more information." << endl;
-		return;
 	}
 
 	if (theNeuralNet.OutputSize == 0)
@@ -563,11 +592,16 @@ void TrainHandWrittenNumsFromMNISTData(vector<string> input)
 		images.push_back(image);
 		labels.push_back(label);
 	}
+	labelFile.close();
+	dataFile.close();
 
-	cout << "Starting to train, press 'q' to stop." << endl;//TODO: add the q part
+	cout << "Starting to train, press 'q' to stop." << endl;
 	int iteration = 0;
 	for (int i = startAt; i < numOfImages; i += stepSize)
 	{
+		if (HasSentCancellationRequest)
+			break;
+
 		vector<vector<double>> inputImages;
 		vector<vector<double>> inputLabels;
 		for (int j = 0; j < trainingSize; j++)
@@ -583,19 +617,153 @@ void TrainHandWrittenNumsFromMNISTData(vector<string> input)
 			cout << "Cost:\t" << cost << endl;
 		iteration++;
 	}
+	if (HasSentCancellationRequest)
+		cout << "Cancellation request received." << endl;
+	cout << "Finished training " << iteration << " times." << endl;
 
 }
 
-uint32_t readuint32FromFile(ifstream stream)
+void TestHandWrittenNumsFromMNISTData(vector<string> input)
 {
+	int maxNum = -1;
+	string dataFileString;
+	string labelFileString;
+
+	if (input.size() < 3)
+	{
+		cout << "Expected at least 2 parameters, use help for more information." << endl;
+		return;
+	}
+
+	for (int iter = 1; iter < input.size(); iter++)
+	{
+		if (input[iter] == "-m")
+		{
+			maxNum = stoi(input[iter + 1]);
+			iter++;
+		}
+		else
+		{
+			dataFileString = input[iter];
+			labelFileString = input[iter + 1];
+			break;
+		}
+	}
+
+	if (theNeuralNet.OutputSize == 0)
+	{
+		cout << "The neural network has not been set up." << endl;
+	}
+
+	ifstream dataFile;
+	dataFile.open(dataFileString, ios::out | ios::binary);
+	ifstream labelFile;
+	labelFile.open(labelFileString, ios::out | ios::binary);
+
+	uint32_t dataMagicNum = 2051;
+	uint32_t labelMagicNum = 2049;
+
+	int numOfImages;
+	int numOfLabels;
+	int rows;
+	int cols;
+
 	uint32_t a;
-	stream.read(reinterpret_cast<char *>(&a), sizeof(a));
-	return(_byteswap_ulong(a));
+	while (dataFile.read(reinterpret_cast<char *>(&a), sizeof(a)))
+	{
+		a = _byteswap_ulong(a);
+		if (a == dataMagicNum)
+		{
+			dataFile.read(reinterpret_cast<char *>(&a), sizeof(a));
+			numOfImages = _byteswap_ulong(a);
+
+			dataFile.read(reinterpret_cast<char *>(&a), sizeof(a));
+			rows = _byteswap_ulong(a);
+
+			dataFile.read(reinterpret_cast<char *>(&a), sizeof(a));
+			cols = _byteswap_ulong(a);
+			break;
+		}
+	}
+
+	while (labelFile.read(reinterpret_cast<char *>(&a), sizeof(a)))
+	{
+		a = _byteswap_ulong(a);
+		if (a == labelMagicNum)
+		{
+			labelFile.read(reinterpret_cast<char *>(&a), sizeof(a));
+			numOfLabels = _byteswap_ulong(a);
+			break;
+		}
+	}
+
+	if (numOfImages != numOfLabels)
+	{
+		cout << "The testing data files do not align." << endl;
+		return;
+	}
+	else
+	{
+		if (maxNum < numOfImages && maxNum != -1)
+			numOfImages = maxNum;
+		cout << "Reading in " << numOfImages << " total images to test with." << endl;
+	}
+
+	vector<vector<double>> images;
+	vector<int> labels;
+
+	uchar b;
+
+	for (int i = 0; i < numOfImages; i++)
+	{
+		vector<double> image;
+		vector<double> label;
+		for (int x = 0; x < cols; x++)
+		{
+			for (int y = 0; y < rows; y++)
+			{
+				dataFile.read(reinterpret_cast<char *>(&b), sizeof(b));
+				image.push_back(double(b) / 255);
+			}
+		}
+		labelFile.read(reinterpret_cast<char *>(&b), sizeof(b));
+
+		images.push_back(image);
+		labels.push_back(int(b));
+	}
+	labelFile.close();
+	dataFile.close();
+
+	cout << "Starting to test the network, press 'q' to stop." << endl;
+	int i;
+	int totalWrong = 0;
+	for (i = 0; i < numOfImages; i++)
+	{
+		if (HasSentCancellationRequest)
+			break;
+		vector<double> output = theNeuralNet.ForwardPropagate(images[i]);
+		int biggest = 0;
+		for (int i = 1; i < output.size(); i++)
+		{
+			if (output[i] > output[biggest])
+				biggest = i;
+		}
+		if (biggest != labels[i])
+			totalWrong++;
+	}
+	double testErrorRate = (double(totalWrong) / double(i - 1)) * 100;
+
+	if (HasSentCancellationRequest)
+		cout << "Cancellation request received." << endl;
+	cout << "Test Error Rate of " << i << " Images:\n\t" << testErrorRate << "%" << endl;
 }
 
-vector<double> LoadImage(string filePath)
+vector<double> LoadImage(string filePath, double blur)
 {
 	cv::Mat image = cv::imread(filePath, cv::IMREAD_GRAYSCALE);
+
+	cv::GaussianBlur(image, image, cv::Size(3, 3), blur);
+
 	vector<double> imageVector;
 
 	for (int x = 0; x < image.cols; x++)

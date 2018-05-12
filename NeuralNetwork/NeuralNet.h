@@ -24,7 +24,7 @@ public:
 	double BackPropagate(std::vector<std::vector<double>> inputVectors, std::vector<std::vector<double>> targetVectors, double learningRate);
 private:
 	double learningrate;
-	std::vector<std::string> _activationFunctionTypes{ "PRELU", "TANH", "SOFTPLUS", "LINEAR"};
+	std::vector<std::string> _activationFunctionTypes{ "PRELU", "TANH", "SOFTPLUS", "LINEAR", "SIGMOID"};
 	int _activationFunctionType = 0;
 	void ForwardPropagateOneLayer(int fromLayer);
 	double ActivationFunction(double, bool);
